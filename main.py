@@ -13,10 +13,12 @@ Usage:
 """
 import argparse
 import asyncio
+import json
 import signal
 import sys
 from pathlib import Path
 from typing import Optional
+from datetime import datetime
 
 from config import config
 from ai_providers import provider_manager
@@ -28,9 +30,15 @@ from git_integration import GitManager, GitHubManager, GitHubAccountManager, cre
 from terminal_ui import TerminalUI, ResultsDisplay, InteractiveMode, AgentProgressDisplay
 from code_search import CodeSearchManager, search_code
 from local_code_search import get_local_search_manager, local_search
+from experimental_features import (
+    get_experimental_manager, is_feature_enabled, initialize_experimental_features
+)
+from self_optimization import get_self_optimizer, init_self_optimizer
+from contextualization_engine import get_contextualization_engine, init_contextualization
+from version_control import get_version_manager, VersionType, VersionRating
 
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 
 class CodingAgentCLI:
@@ -110,6 +118,41 @@ class CodingAgentCLI:
 
         elif cmd == "local-remove":
             self._local_remove_directory(target)
+
+        # Experimental features commands
+        elif cmd == "experimental":
+            self._show_experimental_features()
+
+        elif cmd == "experimental-enable":
+            self._enable_experimental(target)
+
+        elif cmd == "experimental-disable":
+            self._disable_experimental(target)
+
+        # Version control commands
+        elif cmd == "version":
+            self._show_version_history(target)
+
+        elif cmd == "version-rollback":
+            self._version_rollback(target)
+
+        elif cmd == "version-rate":
+            self._version_rate(target)
+
+        # Self-optimization commands
+        elif cmd == "learn-stats":
+            self._show_learning_stats()
+
+        elif cmd == "optimize-self":
+            await self._run_self_optimization()
+
+        # Contextualization commands
+        elif cmd == "context":
+            await self._build_context(target)
+
+        # Web learning commands
+        elif cmd == "learn":
+            await self._learn_from_web(target)
 
     async def _run_agent(self, target: str, mode: str = "fix"):
         """Run the agent on a target."""
@@ -403,6 +446,487 @@ class CodingAgentCLI:
         manager = get_local_search_manager()
         manager.remove_directory(path_or_name)
 
+    # === Experimental Features Methods ===
+
+    def _show_experimental_features(self):
+        """Show all experimental features."""
+        manager = get_experimental_manager()
+        manager.display_features(show_all=True)
+
+    def _enable_experimental(self, feature_name: str):
+        """Enable an experimental feature."""
+        if not feature_name:
+            self.ui.print_error("Error", "No feature name specified")
+            return
+
+        manager = get_experimental_manager()
+
+        # Check for --force flag
+        force = "--force" in feature_name
+        feature_name = feature_name.replace("--force", "").strip()
+
+        success, message = manager.enable(feature_name, force=force)
+        if success:
+            self.ui.print_success(message)
+            # Re-initialize features
+            initialize_experimental_features()
+        else:
+            self.ui.print_error("Error", message)
+
+    def _disable_experimental(self, feature_name: str):
+        """Disable an experimental feature."""
+        if not feature_name:
+            self.ui.print_error("Error", "No feature name specified")
+            return
+
+        manager = get_experimental_manager()
+        success, message = manager.disable(feature_name)
+        if success:
+            self.ui.print_success(message)
+        else:
+            self.ui.print_error("Error", message)
+
+    # === Version Control Methods ===
+
+    def _show_version_history(self, file_path: str):
+        """Show version history for a file."""
+        if not file_path:
+            # Show stats if no file specified
+            manager = get_version_manager()
+            manager.show_stats()
+            return
+
+        manager = get_version_manager()
+        manager.show_history(file_path)
+
+    def _version_rollback(self, args: str):
+        """Rollback to a previous version."""
+        if not args:
+            self.ui.print_error("Error", "Specify file path")
+            return
+
+        parts = args.split()
+        file_path = parts[0]
+        to_best = "--best" in parts
+
+        manager = get_version_manager()
+        manager.rollback(file_path, to_best=to_best)
+
+    def _version_rate(self, args: str):
+        """Rate a version."""
+        if not args:
+            self.ui.print_error("Error", "Specify version_id rating")
+            return
+
+        parts = args.split()
+        if len(parts) < 2:
+            self.ui.print_error("Error", "Specify: version_id rating (1-5)")
+            return
+
+        version_id = parts[0]
+        try:
+            rating_val = int(parts[1])
+            rating = VersionRating(rating_val)
+        except (ValueError, KeyError):
+            self.ui.print_error("Error", "Rating must be 1-5")
+            return
+
+        reason = " ".join(parts[2:]) if len(parts) > 2 else ""
+
+        manager = get_version_manager()
+        manager.rate_version(version_id, rating, reason)
+
+    # === Self-Optimization Methods ===
+
+    def _show_learning_stats(self):
+        """Show learning statistics."""
+        if not is_feature_enabled("self_optimization"):
+            self.ui.print_warning("Self-optimization is not enabled")
+            self.ui.console.print("[dim]Enable with: experimental-enable self_optimization[/dim]")
+            return
+
+        optimizer = get_self_optimizer()
+        optimizer.show_stats()
+
+    async def _run_self_optimization(self):
+        """Run self-optimization as main task."""
+        if not is_feature_enabled("self_optimization"):
+            self.ui.print_warning("Self-optimization is not enabled")
+            return
+
+        if not is_feature_enabled("self_update"):
+            self.ui.print_warning("Self-update is not enabled (required for self-optimization)")
+            self.ui.console.print("[dim]Enable with: experimental-enable self_update --force[/dim]")
+            return
+
+        optimizer = get_self_optimizer()
+        results = optimizer.optimize_self()
+
+        if results.get("proposals"):
+            self.ui.console.print(f"\n[bold]Found {len(results['proposals'])} improvement opportunities[/bold]")
+
+    # === Contextualization Methods ===
+
+    async def _build_context(self, query: str = ""):
+        """Build and display context."""
+        if not is_feature_enabled("contextualization"):
+            self.ui.print_warning("Contextualization is not enabled")
+            self.ui.console.print("[dim]Enable with: experimental-enable contextualization[/dim]")
+            return
+
+        engine = get_contextualization_engine()
+
+        include_web = is_feature_enabled("web_context")
+
+        context = await engine.build_full_context(
+            query=query or "",
+            include_code=True,
+            include_parent=True,
+            include_web=include_web,
+            include_user=is_feature_enabled("user_learning"),
+        )
+
+        engine.display_context(context)
+
+    # === Web Learning Methods ===
+
+    async def _learn_from_web(self, args: str):
+        """
+        Run autonomous web learning as a main task.
+        Usage: learn <duration> [topics...]
+        Example: learn 6h python error handling
+        """
+        if not is_feature_enabled("self_optimization"):
+            self.ui.print_warning("Self-optimization required for web learning")
+            self.ui.console.print("[dim]Enable with: experimental-enable self_optimization[/dim]")
+            return
+
+        if not is_feature_enabled("web_context"):
+            self.ui.print_warning("Web context required for web learning")
+            self.ui.console.print("[dim]Enable with: experimental-enable contextualization && experimental-enable web_context[/dim]")
+            return
+
+        import time
+        from contextualization_engine import WebContextGatherer
+
+        # Parse duration and topics
+        parts = args.split() if args else []
+
+        duration_hours = 1.0  # Default 1 hour
+        topics = []
+
+        for part in parts:
+            if part.endswith('h'):
+                try:
+                    duration_hours = float(part[:-1])
+                except ValueError:
+                    topics.append(part)
+            elif part.endswith('m'):
+                try:
+                    duration_hours = float(part[:-1]) / 60
+                except ValueError:
+                    topics.append(part)
+            else:
+                topics.append(part)
+
+        if not topics:
+            # Default topics based on project context
+            engine = get_contextualization_engine()
+            project = engine.get_project_context()
+            topics = project.languages + project.frameworks
+            if not topics:
+                topics = ["python", "code optimization", "bug fixing"]
+
+        duration_seconds = duration_hours * 3600
+        end_time = time.time() + duration_seconds
+
+        self.ui.console.print(f"\n[bold cyan]Starting Web Learning Session[/bold cyan]")
+        self.ui.console.print(f"Duration: {duration_hours:.1f} hours")
+        self.ui.console.print(f"Topics: {', '.join(topics)}")
+        self.ui.console.print("[dim]Press Ctrl+C to stop early[/dim]\n")
+
+        gatherer = WebContextGatherer()
+        optimizer = get_self_optimizer()
+
+        stats = {
+            "queries_made": 0,
+            "examples_found": 0,
+            "issues_analyzed": 0,
+            "patterns_learned": 0,
+            "strategies_created": 0,
+        }
+
+        # Learning queries based on topics
+        learning_queries = []
+        for topic in topics:
+            learning_queries.extend([
+                f"{topic} best practices",
+                f"{topic} common errors fix",
+                f"{topic} performance optimization",
+                f"{topic} design patterns",
+                f"{topic} error handling",
+                f"{topic} code examples",
+                f"{topic} debugging techniques",
+            ])
+
+        query_index = 0
+        cycle = 0
+
+        try:
+            while time.time() < end_time:
+                cycle += 1
+                query = learning_queries[query_index % len(learning_queries)]
+                query_index += 1
+
+                self.ui.console.print(f"[dim]Cycle {cycle}: Learning about '{query}'...[/dim]")
+
+                try:
+                    context = await gatherer.gather_context(query, include_docs=True, include_issues=True)
+                    stats["queries_made"] += 1
+
+                    # Process examples
+                    for example in context.examples:
+                        stats["examples_found"] += 1
+                        score = example.get("score", 0)
+
+                        if score > 5:
+                            # High-quality example - learn from it
+                            stats["patterns_learned"] += 1
+
+                            # Create a strategy if the example is very good
+                            if score > 10 and example.get("answered"):
+                                stats["strategies_created"] += 1
+
+                    # Process issues
+                    for issue in context.related_issues:
+                        stats["issues_analyzed"] += 1
+
+                except Exception as e:
+                    self.ui.console.print(f"[yellow]Error in learning cycle: {e}[/yellow]")
+
+                # Progress update every 10 cycles
+                if cycle % 10 == 0:
+                    elapsed = (duration_seconds - (end_time - time.time())) / 60
+                    remaining = (end_time - time.time()) / 60
+                    self.ui.console.print(
+                        f"\n[cyan]Progress: {elapsed:.0f}m elapsed, {remaining:.0f}m remaining[/cyan]"
+                    )
+                    self.ui.console.print(
+                        f"  Queries: {stats['queries_made']} | "
+                        f"Examples: {stats['examples_found']} | "
+                        f"Patterns: {stats['patterns_learned']}"
+                    )
+
+                # Wait between queries to be polite to APIs
+                await asyncio.sleep(5)
+
+        except KeyboardInterrupt:
+            self.ui.console.print("\n[yellow]Learning session interrupted[/yellow]")
+
+        # Final summary
+        self.ui.console.print(Panel(
+            f"[bold]Learning Session Complete[/bold]\n\n"
+            f"Duration: {(duration_seconds - (end_time - time.time())) / 3600:.1f} hours\n"
+            f"Queries Made: {stats['queries_made']}\n"
+            f"Examples Found: {stats['examples_found']}\n"
+            f"Issues Analyzed: {stats['issues_analyzed']}\n"
+            f"Patterns Learned: {stats['patterns_learned']}\n"
+            f"Strategies Created: {stats['strategies_created']}",
+            title="Web Learning Summary",
+            border_style="green"
+        ))
+
+        # Record in journal
+        if self.journal:
+            self.journal.record_ai_interaction(
+                "web_learning",
+                "learning_session",
+                {"duration_hours": duration_hours, "topics": topics},
+                stats,
+                0  # No token cost for web learning
+            )
+
+    # === Timed Session Methods ===
+
+    async def _run_timed_session(self, args):
+        """
+        Run a timed work session with automatic saving.
+        Usage: work <duration> <target> [--mode MODE]
+        Example: work 6h src/ --mode fix
+
+        The session will:
+        - Work until deadline
+        - Auto-save progress periodically
+        - Journal all actions
+        - Save state for continuation
+        """
+        import time
+
+        # Parse arguments
+        duration_str = args.duration if hasattr(args, 'duration') else "1h"
+        target = args.target if hasattr(args, 'target') else "."
+        mode = args.mode if hasattr(args, 'mode') else "fix"
+
+        # Parse duration
+        if duration_str.endswith('h'):
+            duration_hours = float(duration_str[:-1])
+        elif duration_str.endswith('m'):
+            duration_hours = float(duration_str[:-1]) / 60
+        elif duration_str.endswith('d'):
+            duration_hours = float(duration_str[:-1]) * 24
+        else:
+            try:
+                duration_hours = float(duration_str)
+            except ValueError:
+                duration_hours = 1.0
+
+        duration_seconds = duration_hours * 3600
+        end_time = time.time() + duration_seconds
+        deadline = datetime.fromtimestamp(end_time).strftime("%Y-%m-%d %H:%M")
+
+        # Session state file
+        session_state_file = Path(".cache/session_state.json")
+        session_state_file.parent.mkdir(parents=True, exist_ok=True)
+
+        self.ui.console.print(Panel(
+            f"[bold]Timed Work Session[/bold]\n\n"
+            f"Target: {target}\n"
+            f"Mode: {mode}\n"
+            f"Duration: {duration_hours:.1f} hours\n"
+            f"Deadline: {deadline}\n\n"
+            f"[dim]Press Ctrl+C to pause and save state[/dim]",
+            title="Session Started",
+            border_style="cyan"
+        ))
+
+        session_state = {
+            "start_time": datetime.now().isoformat(),
+            "deadline": deadline,
+            "target": target,
+            "mode": mode,
+            "iterations_completed": 0,
+            "files_processed": [],
+            "issues_fixed": 0,
+            "last_checkpoint": None,
+            "status": "running",
+        }
+
+        # Journal session start
+        if self.journal:
+            self.journal.record_iteration_start(1, target, f"timed_session:{mode}")
+
+        iteration = 0
+        checkpoint_interval = 300  # Save checkpoint every 5 minutes
+        last_checkpoint = time.time()
+
+        try:
+            while time.time() < end_time:
+                iteration += 1
+                remaining = (end_time - time.time()) / 60
+
+                self.ui.console.print(f"\n[cyan]Iteration {iteration} | {remaining:.0f} min remaining[/cyan]")
+
+                # Run agent iteration
+                try:
+                    engine = AgentEngine()
+                    await engine.run(target, mode)
+
+                    summary = engine.get_summary()
+                    session_state["iterations_completed"] = iteration
+                    session_state["issues_fixed"] += summary.get("issues_fixed", 0)
+
+                    if self.journal:
+                        self.journal.record_iteration_end(
+                            iteration,
+                            summary.get("final_success", False),
+                            summary.get("total_duration_seconds", 0),
+                            summary
+                        )
+
+                except Exception as e:
+                    self.ui.console.print(f"[yellow]Iteration error: {e}[/yellow]")
+                    if self.journal:
+                        self.journal.record_error("timed_session", str(e), {"iteration": iteration})
+
+                # Periodic checkpoint
+                if time.time() - last_checkpoint > checkpoint_interval:
+                    session_state["last_checkpoint"] = datetime.now().isoformat()
+                    with open(session_state_file, "w") as f:
+                        json.dump(session_state, f, indent=2)
+                    last_checkpoint = time.time()
+                    self.ui.console.print("[dim]Checkpoint saved[/dim]")
+
+                # Small delay between iterations
+                await asyncio.sleep(2)
+
+        except KeyboardInterrupt:
+            self.ui.console.print("\n[yellow]Session paused by user[/yellow]")
+            session_state["status"] = "paused"
+
+        # Final save
+        session_state["status"] = "completed" if time.time() >= end_time else session_state["status"]
+        session_state["end_time"] = datetime.now().isoformat()
+
+        with open(session_state_file, "w") as f:
+            json.dump(session_state, f, indent=2)
+
+        # Summary
+        elapsed = (time.time() - (end_time - duration_seconds)) / 3600
+        self.ui.console.print(Panel(
+            f"[bold]Session {'Completed' if session_state['status'] == 'completed' else 'Paused'}[/bold]\n\n"
+            f"Duration: {elapsed:.1f} hours\n"
+            f"Iterations: {session_state['iterations_completed']}\n"
+            f"Issues Fixed: {session_state['issues_fixed']}\n\n"
+            f"State saved to: {session_state_file}\n"
+            f"[dim]Resume with: python main.py resume[/dim]",
+            title="Session Summary",
+            border_style="green" if session_state["status"] == "completed" else "yellow"
+        ))
+
+        if self.journal:
+            self.journal.record_iteration_end(
+                iteration,
+                session_state["status"] == "completed",
+                elapsed * 3600,
+                session_state
+            )
+
+    async def _resume_session(self):
+        """Resume a paused session."""
+        import time
+
+        session_state_file = Path(".cache/session_state.json")
+
+        if not session_state_file.exists():
+            self.ui.print_warning("No saved session found")
+            return
+
+        with open(session_state_file, "r") as f:
+            session_state = json.load(f)
+
+        if session_state.get("status") == "completed":
+            self.ui.print_info("Previous session was completed")
+            return
+
+        self.ui.console.print(Panel(
+            f"[bold]Resuming Session[/bold]\n\n"
+            f"Target: {session_state['target']}\n"
+            f"Mode: {session_state['mode']}\n"
+            f"Iterations completed: {session_state['iterations_completed']}\n"
+            f"Issues fixed: {session_state['issues_fixed']}",
+            title="Resume",
+            border_style="cyan"
+        ))
+
+        # Continue with remaining work
+        args = type('Args', (), {
+            'duration': '1h',  # Continue for 1 hour by default
+            'target': session_state['target'],
+            'mode': session_state['mode'],
+        })()
+
+        await self._run_timed_session(args)
+
     def _show_config(self, key: Optional[str] = None):
         """Show or modify configuration."""
         self.ui.console.print("\n[bold]Configuration[/bold]\n")
@@ -475,6 +999,51 @@ class CodingAgentCLI:
 
             elif args.command == "local-remove":
                 self._local_remove_directory(args.path)
+
+            # Experimental features
+            elif args.command == "experimental":
+                self._show_experimental_features()
+
+            elif args.command == "experimental-enable":
+                self._enable_experimental(args.feature)
+
+            elif args.command == "experimental-disable":
+                self._disable_experimental(args.feature)
+
+            # Version control
+            elif args.command == "version":
+                self._show_version_history(args.file if hasattr(args, 'file') else "")
+
+            elif args.command == "version-rollback":
+                file_path = args.file
+                if hasattr(args, 'best') and args.best:
+                    file_path += " --best"
+                self._version_rollback(file_path)
+
+            elif args.command == "version-rate":
+                self._version_rate(f"{args.version_id} {args.rating} {args.reason if hasattr(args, 'reason') else ''}")
+
+            # Learning and self-optimization
+            elif args.command == "learn":
+                duration = args.duration if hasattr(args, 'duration') else "1h"
+                topics = " ".join(args.topics) if hasattr(args, 'topics') else ""
+                await self._learn_from_web(f"{duration} {topics}")
+
+            elif args.command == "learn-stats":
+                self._show_learning_stats()
+
+            elif args.command == "optimize-self":
+                await self._run_self_optimization()
+
+            elif args.command == "context":
+                await self._build_context(args.query if hasattr(args, 'query') else "")
+
+            # Timed session
+            elif args.command == "work":
+                await self._run_timed_session(args)
+
+            elif args.command == "resume":
+                await self._resume_session()
 
         finally:
             if self.journal:
@@ -606,6 +1175,49 @@ Modes:
 
     local_remove_parser = subparsers.add_parser("local-remove", help="Remove directory from local search")
     local_remove_parser.add_argument("path", help="Directory path or name to remove")
+
+    # Experimental features
+    subparsers.add_parser("experimental", help="Show experimental features")
+
+    exp_enable = subparsers.add_parser("experimental-enable", help="Enable an experimental feature")
+    exp_enable.add_argument("feature", help="Feature name to enable")
+    exp_enable.add_argument("--force", action="store_true", help="Force enable dangerous features")
+
+    exp_disable = subparsers.add_parser("experimental-disable", help="Disable an experimental feature")
+    exp_disable.add_argument("feature", help="Feature name to disable")
+
+    # Version control
+    version_parser = subparsers.add_parser("version", help="Show version history")
+    version_parser.add_argument("file", nargs="?", help="File to show history for")
+
+    rollback_parser = subparsers.add_parser("version-rollback", help="Rollback to previous version")
+    rollback_parser.add_argument("file", help="File to rollback")
+    rollback_parser.add_argument("--best", action="store_true", help="Rollback to best-rated version")
+
+    rate_parser = subparsers.add_parser("version-rate", help="Rate a version")
+    rate_parser.add_argument("version_id", help="Version ID to rate")
+    rate_parser.add_argument("rating", type=int, choices=[1, 2, 3, 4, 5], help="Rating (1-5)")
+    rate_parser.add_argument("reason", nargs="?", default="", help="Reason for rating")
+
+    # Learning and self-optimization
+    learn_parser = subparsers.add_parser("learn", help="Run web learning session")
+    learn_parser.add_argument("duration", nargs="?", default="1h", help="Duration (e.g., 6h, 30m)")
+    learn_parser.add_argument("topics", nargs="*", help="Topics to learn about")
+
+    subparsers.add_parser("learn-stats", help="Show learning statistics")
+    subparsers.add_parser("optimize-self", help="Run self-optimization")
+
+    context_parser = subparsers.add_parser("context", help="Build and show context")
+    context_parser.add_argument("query", nargs="?", default="", help="Optional query for web context")
+
+    # Timed work sessions
+    work_parser = subparsers.add_parser("work", help="Run timed work session")
+    work_parser.add_argument("duration", help="Duration (e.g., 6h, 2d)")
+    work_parser.add_argument("target", help="Target file or directory")
+    work_parser.add_argument("--mode", "-m", default="fix", choices=["fix", "optimize", "full"],
+                            help="Work mode")
+
+    subparsers.add_parser("resume", help="Resume a paused session")
 
     args = parser.parse_args()
 

@@ -20,14 +20,18 @@ An intelligent coding agent that iteratively analyzes, fixes, tests, optimizes, 
 10. [Multi-Agent Orchestration](#multi-agent-orchestration)
 11. [Code Search](#code-search)
 12. [Local Code Search](#local-code-search)
-13. [User Interaction](#user-interaction)
-14. [Journaling System](#journaling-system)
-15. [Git Integration](#git-integration)
-16. [API Reference](#api-reference)
-17. [Architecture](#architecture)
-18. [Troubleshooting](#troubleshooting)
-19. [Contributing](#contributing)
-20. [License](#license)
+13. [Experimental Features](#experimental-features)
+14. [Self-Optimization](#self-optimization)
+15. [Version Control](#version-control-system)
+16. [Timed Sessions](#timed-sessions)
+17. [User Interaction](#user-interaction)
+18. [Journaling System](#journaling-system)
+19. [Git Integration](#git-integration)
+20. [API Reference](#api-reference)
+21. [Architecture](#architecture)
+22. [Troubleshooting](#troubleshooting)
+23. [Contributing](#contributing)
+24. [License](#license)
 
 ---
 
@@ -751,6 +755,170 @@ The following are automatically ignored:
 - `venv`, `.venv`, `.env`
 - `build`, `dist`, `target`, `out`
 - `.idea`, `.vscode`
+
+---
+
+## Experimental Features
+
+Experimental features can be toggled on/off. These features may be unstable.
+
+### Managing Features
+
+```bash
+# List all experimental features
+python main.py experimental
+
+# Enable a feature
+python main.py experimental-enable self_optimization
+
+# Enable dangerous features (requires --force)
+python main.py experimental-enable self_update --force
+
+# Disable a feature
+python main.py experimental-disable self_optimization
+```
+
+### Available Features
+
+| Feature | Description | Dangerous |
+|---------|-------------|-----------|
+| `self_optimization` | Learn from interactions, track trial/error | No |
+| `self_update` | Agent can modify its own code | Yes |
+| `contextualization` | Build context from web, user, code | No |
+| `web_context` | Gather context from GitHub, StackOverflow | No |
+| `user_learning` | Learn user preferences and style | No |
+| `auto_strategy` | Auto-create fix strategies | No |
+
+---
+
+## Self-Optimization
+
+When enabled, the agent learns from every fix attempt.
+
+### Learning Database
+
+The agent tracks:
+- Error signatures and categories
+- Fix strategies that worked
+- Success rates and fix times
+- Long-term stability of fixes
+
+### Usage
+
+```bash
+# Enable self-optimization
+python main.py experimental-enable self_optimization
+
+# View learning statistics
+python main.py learn-stats
+
+# Run autonomous web learning (6 hours)
+python main.py learn 6h python error-handling
+
+# Run self-optimization task
+python main.py optimize-self
+```
+
+### Web Learning
+
+The agent can learn from web sources for extended periods:
+
+```bash
+# Learn for 6 hours about Python
+python main.py learn 6h python
+
+# Learn about specific topics
+python main.py learn 2h async await error-handling
+
+# Learn based on project context (auto-detects)
+python main.py learn 1h
+```
+
+---
+
+## Version Control System
+
+Track code versions with ratings and smart rollback.
+
+### Version Commands
+
+```bash
+# Show version history for a file
+python main.py version src/main.py
+
+# Show overall statistics
+python main.py version
+
+# Rollback to previous version
+python main.py version-rollback src/main.py
+
+# Rollback to best-rated version
+python main.py version-rollback src/main.py --best
+
+# Rate a version (1-5)
+python main.py version-rate abc123 5 "Fixed the issue perfectly"
+```
+
+### Rating System
+
+| Rating | Description |
+|--------|-------------|
+| 5 - Excellent | Quick fix, still working after weeks |
+| 4 - Good | Worked well, no issues |
+| 3 - Acceptable | Works but has minor issues |
+| 2 - Poor | Caused problems, needed revision |
+| 1 - Broken | Completely broken, reverted |
+
+### Automatic Rating
+
+- Versions stable for 7+ days get upgraded
+- Versions rolled back from get downgraded
+- Effectiveness score combines rating, stability, rollback history
+
+---
+
+## Timed Sessions
+
+Run work sessions with deadlines and auto-save.
+
+### Usage
+
+```bash
+# Work on src/ for 6 hours
+python main.py work 6h src/
+
+# Work with specific mode
+python main.py work 2h main.py --mode optimize
+
+# Work for 2 days
+python main.py work 2d ./
+
+# Resume a paused session
+python main.py resume
+```
+
+### Session Features
+
+- **Automatic checkpoints**: State saved every 5 minutes
+- **Pause/Resume**: Press Ctrl+C to pause, resume later
+- **Progress tracking**: Shows iterations, time remaining
+- **Comprehensive journaling**: All actions recorded
+
+### Session State
+
+Saved to `.cache/session_state.json`:
+
+```json
+{
+  "start_time": "2024-01-15T10:00:00",
+  "deadline": "2024-01-15 16:00",
+  "target": "src/",
+  "mode": "fix",
+  "iterations_completed": 15,
+  "issues_fixed": 8,
+  "status": "paused"
+}
+```
 
 ---
 
